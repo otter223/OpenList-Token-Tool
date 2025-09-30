@@ -1,0 +1,58 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+  # 允许你从 Actions 页面手动触发
+  workflow_dispatch:
+    
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    # (来自你的workflow) 这是最佳实践，为 GITHUB_TOKEN 提供精确的权限
+    permissions:
+      contents: read
+      packages: write
+      attestations: write # 用于生成构建证明，提升安全性
+      id-token: write    # 用于登录云提供商
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    # (新增) 设置 QEMU 模拟器，这是实现多架构构建的基础
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    # (新增) 设置 Docker Buildx，使用现代化的构建引擎
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # (修改) 只保留登录到 GHCR 的步骤
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+          
+    # (核心修改) 构建并推送两个 Dockerfile，每个都支持多架构
+    - name: Build and push openlist_api_server:latest
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        platforms: linux/amd64,linux/arm64
+        # 自动使用 ghcr.io/用户名/仓库名:latest 作为标签
+        tags: ghcr.io/${{ github.repository }}:latest
+
+    - name: Build and push openlist_api_server:alpine
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile-Lite
+        push: true
+        platforms: linux/amd64,linux/arm64
+        # 自动使用 ghcr.io/用户名/仓库名:alpine 作为标签
+        tags: ghcr.io/${{ github.repository }}:alpine
